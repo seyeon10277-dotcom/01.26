@@ -3,7 +3,8 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from datetime import datetime
+import yfinance as yf
+from datetime import datetime, timedelta
 from io import BytesIO
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -35,14 +36,31 @@ st.markdown("""
 
 # --- [Helper Functions] 데이터 및 서류 생성 ---
 
-@st.cache_data
+@st.cache_data(ttl=3600)  # 1시간마다 캐시 갱신
 def get_exchange_data():
-    """환율 데이터 생성 (2026-01-26 기준 최근 30일)"""
-    dates = pd.date_range(end=datetime(2026, 1, 26), periods=30)
-    values = [1476, 1478, 1443, 1446, 1441, 1441, 1434, 1437, 1443, 1443,
-              1441, 1440, 1445, 1444, 1446, 1450, 1456, 1455, 1464, 1473,
-              1462, 1468, 1472, 1471, 1471, 1477, 1464, 1463, 1446, 1439.36]
-    return pd.DataFrame({"날짜": dates, "환율": values})
+    """yfinance를 이용한 실시간 USD/KRW 환율 데이터 수집 (최근 30일)"""
+    try:
+        # Yahoo Finance에서 원/달러 환율 티커는 'KRW=X'입니다.
+        ticker = "KRW=X"
+        data = yf.download(ticker, period="1mo", interval="1d")
+        
+        if data.empty:
+            # API 실패 시 예비용 데이터 (사용자 제공 데이터 기반)
+            dates = pd.date_range(end=datetime.now(), periods=30)
+            values = [1476, 1478, 1443, 1446, 1441, 1441, 1434, 1437, 1443, 1443,
+                      1441, 1440, 1445, 1444, 1446, 1450, 1456, 1455, 1464, 1473,
+                      1462, 1468, 1472, 1471, 1471, 1477, 1464, 1463, 1446, 1439.36]
+            return pd.DataFrame({"날짜": dates, "환율": values})
+        
+        df = data[['Close']].reset_index()
+        df.columns = ["날짜", "환율"]
+        # 시계열 데이터 가독성을 위해 날짜 포맷 변경
+        df['날짜'] = pd.to_datetime(df['날짜']).dt.date
+        return df
+    except:
+        # 오류 발생 시 빈 데이터프레임 방지용
+        dates = pd.date_range(end=datetime.now(), periods=5)
+        return pd.DataFrame({"날짜": dates, "환율": [1440.0] * 5})
 
 def calculate_estimated_cost(base_price, term, transport, insurance, payment, fta_type):
     """
@@ -77,12 +95,11 @@ def calculate_estimated_cost(base_price, term, transport, insurance, payment, ft
     total += base_price * payment_fees.get(payment, 0)
     
     # 4. FTA 관세 적용 (DDP 조건일 때 세금 시뮬레이션)
-    # 기본 관세 8% + 부가세 10% = 약 18%가 협정 미적용 기준
     fta_rates = {
         "협정 미적용 (기본세율)": 0.18,
-        "한-미 FTA (KOR-USA)": 0.10,   # 관세 0% 가정 + 부가세 10%
-        "한-EU FTA (KOR-EU)": 0.10,    # 관세 0% 가정 + 부가세 10%
-        "한-중 FTA (KOR-CHINA)": 0.14, # 민감품목 관세 일부 잔존 가정
+        "한-미 FTA (KOR-USA)": 0.10,
+        "한-EU FTA (KOR-EU)": 0.10,
+        "한-중 FTA (KOR-CHINA)": 0.14,
         "한-베트남 FTA (KOR-VIETNAM)": 0.10,
         "RCEP (역내포괄적경제동반자협정)": 0.12
     }
@@ -155,12 +172,15 @@ def create_bl_docx(data):
 
 # --- [Sidebar] 금융 정보 ---
 exchange_df = get_exchange_data()
-current_rate = exchange_df["환율"].iloc[-1]
-delta = round(current_rate - exchange_df["환율"].iloc[-2], 2)
+current_rate = float(exchange_df["환율"].iloc[-1])
+prev_rate = float(exchange_df["환율"].iloc[-2])
+delta = round(current_rate - prev_rate, 2)
 
 with st.sidebar:
     st.title("💰 금융 & FTA 현황")
-    st.metric(label="USD/KRW (2026-01-26)", value=f"{current_rate:,.2f}원", delta=f"{delta}원")
+    st.metric(label=f"USD/KRW ({datetime.now().strftime('%Y-%m-%d')})", 
+              value=f"{current_rate:,.2f}원", 
+              delta=f"{delta}원")
     st.markdown("---")
     st.subheader("📊 실무 가이드")
     st.caption("• 항공(AIR): 해상 대비 운임 약 15% 할증")
@@ -172,9 +192,11 @@ st.title("🚢 Trade Master 2026: FTA & 결제 통합 자동화")
 
 col_graph, col_calc = st.columns([2, 1])
 with col_graph:
-    st.subheader("📊 환율 추이 (최근 30일)")
+    st.subheader("📊 실시간 환율 추이 (최근 30일)")
     fig, ax = plt.subplots(figsize=(10, 2.5))
     ax.plot(exchange_df["날짜"], exchange_df["환율"], color='#1f77b4', marker='o', markersize=3)
+    # x축 날짜 라벨 겹침 방지
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 
 with col_calc:
@@ -219,7 +241,6 @@ with st.form("trade_form"):
         unit_price_input = st.number_input("단가(USD)", value=1.00)
         
     st.divider()
-    # 인코텀즈 + 결제금융 + FTA 관세가 포함된 실시간 견적 계산
     subtotal = qty_input * unit_price_input
     estimated_total = calculate_estimated_cost(subtotal, selected_term, transport_mode, insurance_type, payment, selected_fta)
     
@@ -270,3 +291,5 @@ if 'ai_analysis' in st.session_state:
             cols[i].download_button(label=f"📥 {name}", data=bio.getvalue(), file_name=name,
                                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         st.success("FTA 정보와 결제 조건이 반영된 모든 서류가 준비되었습니다.")
+
+        #블루스크린 모드  ㄱ ㄱ 눈 나빠질수도 있으니까
