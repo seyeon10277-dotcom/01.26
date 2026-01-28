@@ -178,8 +178,8 @@ delta = round(current_rate - prev_rate, 2)
 
 with st.sidebar:
     st.title("💰 금융 & FTA 현황")
-    st.metric(label=f"USD/KRW ({datetime.now().strftime('%Y-%m-%d')})", 
-              value=f"{current_rate:,.2f}원", 
+    st.metric(label=f"USD/KRW ({datetime.now().strftime('%Y-%m-%d')})",
+              value=f"{current_rate:,.2f}원",
               delta=f"{delta}원")
     st.markdown("---")
     st.subheader("📊 실무 가이드")
@@ -223,7 +223,7 @@ with st.form("trade_form"):
         fta_list = ["협정 미적용 (기본세율)", "한-미 FTA (KOR-USA)", "한-EU FTA (KOR-EU)", "한-중 FTA (KOR-CHINA)", "한-베트남 FTA (KOR-VIETNAM)", "RCEP"]
         selected_fta = st.selectbox("FTA 협정 선택", fta_list)
         transport_mode = st.radio("운송 수단", ["해상(SEA)", "항공(AIR)"], horizontal=True)
-        insurance_type = st.selectbox("적하보험 조건", 
+        insurance_type = st.selectbox("적하보험 조건",
                                     ["선택 안함", "ICC(A) (=ICC(AIR))", "ICC(B) (=ICC(WA))", "ICC(C) (=ICC(FPA))", "ICC(WAIOP)"])
     with c3:
         st.markdown("**3. 품목 및 결제 정보**")
@@ -291,5 +291,3 @@ if 'ai_analysis' in st.session_state:
             cols[i].download_button(label=f"📥 {name}", data=bio.getvalue(), file_name=name,
                                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         st.success("FTA 정보와 결제 조건이 반영된 모든 서류가 준비되었습니다.")
-
-        #블루스크린 모드  ㄱ ㄱ 눈 나빠질수도 있으니까
