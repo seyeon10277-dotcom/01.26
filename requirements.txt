@@ -1,7 +1,8 @@
-streamlit
-pandas
-matplotlib
-numpy
-python-dotenv
-openai
+yfinance
 python-docx
+openai
+python-dotenv
+streamlit
+matplotlib
+pandas
+numpy
